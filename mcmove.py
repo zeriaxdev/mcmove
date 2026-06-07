@@ -43,6 +43,25 @@ STATE_DIR = CONFIG_DIR / "state"
 MODRINTH_API = "https://api.modrinth.com/v2"
 USER_AGENT = "mcmove/0.2 (github.com/zeriaxdev/mcmove)"
 
+# ----------------------------------------------------------------------------- color
+_COLOR = (
+    sys.stdout.isatty()
+    and os.environ.get("NO_COLOR") is None
+    and os.environ.get("TERM") != "dumb"
+)
+
+
+def _c(code, s):
+    return f"\033[{code}m{s}\033[0m" if _COLOR else s
+
+
+def green(s): return _c("32", s)
+def red(s): return _c("31", s)
+def yellow(s): return _c("33", s)
+def cyan(s): return _c("36", s)
+def dim(s): return _c("2", s)
+def bold(s): return _c("1", s)
+
 try:
     import paramiko
 except ImportError:
@@ -51,7 +70,7 @@ except ImportError:
 
 # ----------------------------------------------------------------------------- ui helpers
 def die(msg, code=1):
-    print(f"error: {msg}", file=sys.stderr)
+    print(red(f"error: {msg}"), file=sys.stderr)
     sys.exit(code)
 
 
@@ -546,33 +565,35 @@ def do_mod_sync(sftp, server_name, src, dry_run):
     infos = classify_mods(paths)
     n_client = sum(1 for i in infos if i["side"] == "client")
     n_unknown = sum(1 for i in infos if i["side"] == "unknown")
-    print(f"  {len(infos) - n_client} server-side · {n_client} client-only (skipped)"
-          + (f" · {n_unknown} undetermined (kept)" if n_unknown else ""))
+    print(f"  {len(infos) - n_client} server-side · "
+          + dim(f"{n_client} client-only (skipped)")
+          + (dim(f" · {n_unknown} undetermined (kept)") if n_unknown else ""))
 
     manifest = load_manifest(server_name)
     if True:
         remote_files = set(sftp.listdir("/mods")) if remote_exists(sftp, "/mods") else set()
         plan, new_managed = plan_mod_sync(infos, manifest, remote_files)
 
-        print("\nPlan:")
-        print(f"  add {len(plan['add'])} · update {len(plan['update'])} · "
-              f"remove {len(plan['remove'])} · unchanged {len(plan['keep'])} · "
-              f"client skipped {len(plan['client'])}")
+        print(bold("\nPlan:"))
+        print("  " + green(f"add {len(plan['add'])}") + " · "
+              + yellow(f"update {len(plan['update'])}") + " · "
+              + red(f"remove {len(plan['remove'])}") + " · "
+              + dim(f"unchanged {len(plan['keep'])} · client skipped {len(plan['client'])}"))
         for i in plan["add"]:
-            print(f"  + add     {i['filename']}")
+            print(green(f"  + add     {i['filename']}"))
         for i in plan["update"]:
-            print(f"  ~ update  {i['filename']}")
+            print(yellow(f"  ~ update  {i['filename']}"))
         for fn in dict.fromkeys(plan["remove"]):
-            print(f"  - remove  {fn}")
+            print(red(f"  - remove  {fn}"))
         if plan["unknown"]:
-            print(f"  ? kept (couldn't determine side): {', '.join(plan['unknown'][:8])}"
-                  + (" ..." if len(plan['unknown']) > 8 else ""))
+            print(dim(f"  ? kept (couldn't determine side): {', '.join(plan['unknown'][:8])}"
+                      + (" ..." if len(plan['unknown']) > 8 else "")))
 
         if not (plan["add"] or plan["update"] or plan["remove"]):
-            print("\nServer mods already up to date. Nothing to do.")
+            print(green("\nServer mods already up to date. Nothing to do."))
             return
         if dry_run:
-            print("\n(dry run — no changes made)")
+            print(cyan("\n(dry run — no changes made)"))
             return
         if not confirm("\nApply this patch?", default=True):
             print("aborted")
@@ -584,14 +605,14 @@ def do_mod_sync(sftp, server_name, src, dry_run):
                 sftp.remove("/mods/" + fn)
             except IOError:
                 pass
-            print(f"  - {fn}")
+            print(red(f"  - {fn}"))
         for i in plan["add"] + plan["update"]:
             sftp.put(i["path"], "/mods/" + i["filename"])
-            print(f"  ↑ {i['filename']}")
+            print(green(f"  ↑ {i['filename']}"))
 
         manifest["mods"] = new_managed
         save_manifest(server_name, manifest)
-    print("\n✓ Mods patched. Restart the server to load changes.")
+    print(green(bold("\n✓ Mods patched. Restart the server to load changes.")))
 
 
 def sync_mods(profile, server_name, src, dry_run):
@@ -708,7 +729,7 @@ def run_wizard(args):
     cfg["servers"][server_name] = profile
     save_config(cfg)
 
-    print("\n✓ Done. Restart the server in the panel to load the changes.")
+    print(green(bold("\n✓ Done. Restart the server in the panel to load the changes.")))
     if "world" in actions:
         print("  Note: if this was a single-player world on vanilla, dimensions are nested")
         print("  inside the world folder — that's fine for modded/Forge/NeoForge servers.")
