@@ -16,6 +16,7 @@ Config + backups live in ~/.config/mcmove/.
 """
 import argparse
 import getpass
+import hashlib
 import json
 import os
 import posixpath
@@ -26,11 +27,21 @@ import re
 import tarfile
 import time
 import urllib.parse
+import urllib.request
+import zipfile
 from pathlib import Path
+
+try:
+    import tomllib  # py3.11+
+except ImportError:
+    tomllib = None
 
 CONFIG_DIR = Path(os.path.expanduser("~/.config/mcmove"))
 CONFIG_FILE = CONFIG_DIR / "servers.json"
 BACKUP_DIR = CONFIG_DIR / "backups"
+STATE_DIR = CONFIG_DIR / "state"
+MODRINTH_API = "https://api.modrinth.com/v2"
+USER_AGENT = "mcmove/0.2 (github.com/zeriaxdev/mcmove)"
 
 try:
     import paramiko
@@ -180,7 +191,37 @@ def cmd_list(args):
     print("Configured servers:")
     for name, s in cfg["servers"].items():
         auth = "key" if s.get("key_path") else "password"
-        print(f"  {name:16} {s['username']}@{s['host']}:{s['port']}  ({auth})")
+        src = s.get("last_src", "")
+        print(f"  {name:16} {s['username']}@{s['host']}:{s['port']}  ({auth})"
+              + (f"  src={src}" if src else ""))
+
+
+def _select_server(cfg, name):
+    if not cfg["servers"]:
+        die("no servers configured; add one with:  python3 mcmove.py add-server")
+    if not name:
+        name = pick_one(
+            "Target server:",
+            [(f"{n}  ({s['username']}@{s['host']})", n) for n, s in cfg["servers"].items()],
+        )
+    if not name or name not in cfg["servers"]:
+        die("no server selected")
+    return name, cfg["servers"][name]
+
+
+def cmd_sync(args):
+    """Patch only the mods on a server to match a local instance."""
+    cfg = load_config()
+    name, profile = _select_server(cfg, args.server)
+    src = clean_path(args.src or ask(
+        "Path to your local Modrinth/Minecraft instance", profile.get("last_src", "")))
+    if not os.path.isdir(src):
+        die(f"not a folder: {src}")
+    sync_mods(profile, name, src, args.dry_run)
+    if not args.dry_run:
+        profile["last_src"] = src
+        cfg["servers"][name] = profile
+        save_config(cfg)
 
 
 # ----------------------------------------------------------------------------- sftp core
@@ -353,6 +394,216 @@ def move_config(sftp, src_instance):
     upload_dir(sftp, cfg_dir, "/config")
 
 
+# ----------------------------------------------------------------------------- mod sync (patcher)
+def sha1_of(path):
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _http_json(url, payload=None):
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode()
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=data, headers=headers,
+                                 method="POST" if payload is not None else "GET")
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read().decode())
+
+
+def modrinth_sides(hashes):
+    """sha1 -> (project_id, server_side) via Modrinth. Best-effort; {} on failure."""
+    if not hashes:
+        return {}
+    try:
+        vf = _http_json(f"{MODRINTH_API}/version_files",
+                        {"hashes": hashes, "algorithm": "sha1"})
+    except Exception:  # noqa  (offline / rate-limited -> fall back to jar metadata)
+        return {}
+    proj_by_hash, pids = {}, set()
+    for h, ver in vf.items():
+        pid = ver.get("project_id")
+        if pid:
+            proj_by_hash[h] = pid
+            pids.add(pid)
+    side_by_pid = {}
+    if pids:
+        try:
+            ids = urllib.parse.quote(json.dumps(sorted(pids)))
+            for p in _http_json(f"{MODRINTH_API}/projects?ids={ids}"):
+                side_by_pid[p["id"]] = p.get("server_side")
+        except Exception:  # noqa
+            pass
+    return {h: (pid, side_by_pid.get(pid)) for h, pid in proj_by_hash.items()}
+
+
+def read_jar_meta(path):
+    """Offline fallback: (modid, env) from a jar. env in {client, server, both, None}."""
+    try:
+        with zipfile.ZipFile(path) as z:
+            names = set(z.namelist())
+            if "fabric.mod.json" in names:
+                data = json.loads(z.read("fabric.mod.json").decode("utf-8", "replace"))
+                env = {"client": "client", "server": "server"}.get(data.get("environment"), "both")
+                return data.get("id"), env
+            for tn in ("META-INF/neoforge.mods.toml", "META-INF/mods.toml"):
+                if tn in names and tomllib:
+                    try:
+                        t = tomllib.loads(z.read(tn).decode("utf-8", "replace"))
+                        mods = t.get("mods", [])
+                        if mods:
+                            return mods[0].get("modId"), None  # forge: no reliable side
+                    except Exception:  # noqa
+                        pass
+    except Exception:  # noqa
+        pass
+    return None, None
+
+
+def classify_mods(paths):
+    """[{path, filename, sha1, key, side}] with side in {keep, client, unknown}."""
+    infos = [{"path": str(p), "filename": Path(p).name, "sha1": sha1_of(p)} for p in paths]
+    sides = modrinth_sides([i["sha1"] for i in infos])
+    for i in infos:
+        hit = sides.get(i["sha1"])
+        if hit:
+            pid, server_side = hit
+            i["key"] = "modrinth:" + pid
+            i["side"] = "client" if server_side == "unsupported" else "keep"
+            continue
+        modid, env = read_jar_meta(i["path"])
+        i["key"] = ("mod:" + modid) if modid else ("file:" + i["filename"])
+        i["side"] = {"client": "client", "server": "keep", "both": "keep"}.get(env, "unknown")
+    return infos
+
+
+def manifest_path(server):
+    return STATE_DIR / f"{server}.json"
+
+
+def load_manifest(server):
+    p = manifest_path(server)
+    return json.loads(p.read_text()) if p.exists() else {"mods": {}}
+
+
+def save_manifest(server, man):
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    manifest_path(server).write_text(json.dumps(man, indent=2))
+
+
+def plan_mod_sync(infos, manifest, remote_files):
+    """Diff local mods vs what we manage on the server. Returns (plan, new_managed)."""
+    managed = manifest.get("mods", {})
+    plan = {"add": [], "update": [], "remove": [], "keep": [], "client": [], "unknown": []}
+    new_managed, seen = {}, set()
+    for i in infos:
+        key = i["key"]
+        seen.add(key)
+        if i["side"] == "client":
+            for fn in {managed.get(key, {}).get("filename"), i["filename"]} - {None}:
+                if fn in remote_files:
+                    plan["remove"].append(fn)
+            plan["client"].append(i["filename"])
+            continue
+        if i["side"] == "unknown":
+            plan["unknown"].append(i["filename"])
+        prev = managed.get(key)
+        if prev:
+            if prev["sha1"] == i["sha1"]:
+                (plan["keep"] if i["filename"] in remote_files else plan["add"]).append(
+                    i["filename"] if i["filename"] in remote_files else i)
+            else:
+                if prev["filename"] in remote_files and prev["filename"] != i["filename"]:
+                    plan["remove"].append(prev["filename"])
+                plan["update"].append(i)
+        else:
+            (plan["keep"] if i["filename"] in remote_files else plan["add"]).append(
+                i["filename"] if i["filename"] in remote_files else i)
+        new_managed[key] = {"filename": i["filename"], "sha1": i["sha1"], "side": i["side"]}
+    # mods that left the pack: drop the ones we previously managed
+    for key, m in managed.items():
+        if key not in seen and m["filename"] in remote_files:
+            plan["remove"].append(m["filename"])
+    return plan, new_managed
+
+
+def do_mod_sync(sftp, server_name, src, dry_run):
+    """Patch the server's /mods to match the local instance, over an existing sftp."""
+    mods_dir = Path(src) / "mods"
+    if not mods_dir.is_dir():
+        print(f"  ! no mods/ folder in {src}, skipping mods")
+        return
+    paths = sorted(mods_dir.glob("*.jar"))
+    if not paths:
+        print("  ! no .jar files in mods/, skipping mods")
+        return
+
+    print(f"Scanning {len(paths)} local mods (resolving client/server via Modrinth)...")
+    infos = classify_mods(paths)
+    n_client = sum(1 for i in infos if i["side"] == "client")
+    n_unknown = sum(1 for i in infos if i["side"] == "unknown")
+    print(f"  {len(infos) - n_client} server-side · {n_client} client-only (skipped)"
+          + (f" · {n_unknown} undetermined (kept)" if n_unknown else ""))
+
+    manifest = load_manifest(server_name)
+    if True:
+        remote_files = set(sftp.listdir("/mods")) if remote_exists(sftp, "/mods") else set()
+        plan, new_managed = plan_mod_sync(infos, manifest, remote_files)
+
+        print("\nPlan:")
+        print(f"  add {len(plan['add'])} · update {len(plan['update'])} · "
+              f"remove {len(plan['remove'])} · unchanged {len(plan['keep'])} · "
+              f"client skipped {len(plan['client'])}")
+        for i in plan["add"]:
+            print(f"  + add     {i['filename']}")
+        for i in plan["update"]:
+            print(f"  ~ update  {i['filename']}")
+        for fn in dict.fromkeys(plan["remove"]):
+            print(f"  - remove  {fn}")
+        if plan["unknown"]:
+            print(f"  ? kept (couldn't determine side): {', '.join(plan['unknown'][:8])}"
+                  + (" ..." if len(plan['unknown']) > 8 else ""))
+
+        if not (plan["add"] or plan["update"] or plan["remove"]):
+            print("\nServer mods already up to date. Nothing to do.")
+            return
+        if dry_run:
+            print("\n(dry run — no changes made)")
+            return
+        if not confirm("\nApply this patch?", default=True):
+            print("aborted")
+            return
+
+        sftp_mkdirs(sftp, "/mods")
+        for fn in dict.fromkeys(plan["remove"]):
+            try:
+                sftp.remove("/mods/" + fn)
+            except IOError:
+                pass
+            print(f"  - {fn}")
+        for i in plan["add"] + plan["update"]:
+            sftp.put(i["path"], "/mods/" + i["filename"])
+            print(f"  ↑ {i['filename']}")
+
+        manifest["mods"] = new_managed
+        save_manifest(server_name, manifest)
+    print("\n✓ Mods patched. Restart the server to load changes.")
+
+
+def sync_mods(profile, server_name, src, dry_run):
+    """Standalone mod patch: open a connection and run do_mod_sync."""
+    transport, sftp = connect(profile)
+    try:
+        do_mod_sync(sftp, server_name, src, dry_run)
+    finally:
+        sftp.close()
+        transport.close()
+
+
 def move_world(sftp, world_src, level_name, clear):
     if clear:
         print(f"  ✗ clearing remote /{level_name} ...")
@@ -378,13 +629,14 @@ def run_wizard(args):
         die("no server selected")
     profile = cfg["servers"][server_name]
 
-    src = clean_path(args.src or ask("Path to your local Modrinth/Minecraft instance"))
+    remembered = profile.get("last_src", "")
+    src = clean_path(args.src or ask("Path to your local Modrinth/Minecraft instance", remembered))
     if not os.path.isdir(src):
         die(f"not a folder: {src}")
 
     actions = pick_many(
         "What do you want to move?",
-        [("Mods (mods/*.jar)", "mods"),
+        [("Mods (patch — add/update/remove, skips client-only)", "mods"),
          ("World (from saves/)", "world"),
          ("Config (config/)", "config")],
     )
@@ -403,10 +655,13 @@ def run_wizard(args):
         default_name = "world"
         level_name = ask("Target level-name on the server", default_name)
 
-    clear_mods = "mods" in actions and confirm("Clear existing remote /mods first?", default=False)
     clear_world = "world" in actions and confirm(
         f"Clear existing remote /{level_name} first?", default=False)
-    do_backup = confirm("Back up the server's current files before overwriting?", default=True)
+    # World/config overwrite, so offer a backup. Mods are patched (non-destructive
+    # to unmanaged files), so they're excluded from the backup.
+    backup_actions = [a for a in actions if a in ("world", "config")]
+    do_backup = bool(backup_actions) and confirm(
+        "Back up the server's current world/config before overwriting?", default=True)
 
     print("\nPlan:")
     print(f"  server : {server_name}  ({profile['username']}@{profile['host']}:{profile['port']})")
@@ -416,7 +671,7 @@ def run_wizard(args):
             print(f"  world  : {Path(world_src).name}  ->  /{level_name}"
                   + ("  (clearing target)" if clear_world else ""))
         elif a == "mods":
-            print("  mods   : mods/*.jar  ->  /mods" + ("  (clearing target)" if clear_mods else ""))
+            print("  mods   : patch /mods (add/update/remove · skip client-only)")
         elif a == "config":
             print("  config : config/  ->  /config")
     print(f"  backup : {'yes' if do_backup else 'no'}")
@@ -428,8 +683,6 @@ def run_wizard(args):
     try:
         if do_backup:
             targets = []
-            if "mods" in actions:
-                targets.append("/mods")
             if "world" in actions:
                 targets.append("/" + level_name)
             if "config" in actions:
@@ -437,16 +690,23 @@ def run_wizard(args):
             print("\nBackup:")
             backup_remote(sftp, server_name, targets)
 
-        print("\nMoving:")
         if "mods" in actions:
-            move_mods(sftp, src, clear_mods)
+            print("\nMods (patch):")
+            do_mod_sync(sftp, server_name, src, dry_run=False)
         if "config" in actions:
+            print("\nConfig:")
             move_config(sftp, src)
         if "world" in actions:
+            print("\nWorld:")
             move_world(sftp, world_src, level_name, clear_world)
     finally:
         sftp.close()
         transport.close()
+
+    # Remember the source path for next time.
+    profile["last_src"] = src
+    cfg["servers"][server_name] = profile
+    save_config(cfg)
 
     print("\n✓ Done. Restart the server in the panel to load the changes.")
     if "world" in actions:
@@ -468,6 +728,11 @@ def main():
     wiz = sub.add_parser("move", help="run the move wizard (default)")
     wiz.add_argument("--src", help="path to local instance (skips the prompt)")
 
+    syn = sub.add_parser("sync", help="patch a server's mods to match a local instance")
+    syn.add_argument("--server", help="saved server name (otherwise you'll be asked)")
+    syn.add_argument("--src", help="path to local instance (otherwise remembered/asked)")
+    syn.add_argument("--dry-run", action="store_true", help="show the plan, change nothing")
+
     args = p.parse_args()
     if args.cmd == "list":
         cmd_list(args)
@@ -475,6 +740,8 @@ def main():
         cmd_add_server(args)
     elif args.cmd == "remove-server":
         cmd_remove_server(args)
+    elif args.cmd == "sync":
+        cmd_sync(args)
     else:  # move / default
         if not hasattr(args, "src"):
             args.src = None

@@ -11,6 +11,13 @@ panel's SFTP, so files land owned by the server user automatically (no root, no
 `chown`), and it keeps `level-name` in `server.properties` in sync so the world
 actually loads. It can back up the server's current files before overwriting.
 
+Mods are handled as a **patch**, not a wipe-and-replace: `mcmove` diffs your local
+instance against the server and only **adds**, **updates**, or **removes** what
+changed — identical mods are left alone, mods you added directly on the server are
+never touched, and **client-only mods** (shaders, minimaps, texture mods…) are
+detected and kept off the server so it doesn't crash. The instance path is
+remembered per server.
+
 ## Table of Contents
 
 - [Background](#background)
@@ -76,17 +83,43 @@ The wizard will:
 
 Then restart the server in the panel.
 
+### Patch mods only
+
+To just sync mods (the common case after you update your pack locally):
+
+```sh
+python3 mcmove.py sync                 # pick server, uses remembered instance path
+python3 mcmove.py sync --dry-run       # show the add/update/remove plan, change nothing
+python3 mcmove.py sync --server survival --src ~/packs/create
+```
+
+How the patch is decided, per mod:
+
+| Situation | Action |
+| --- | --- |
+| Same mod, same version | left alone |
+| Same mod, new version | old removed, new uploaded |
+| New mod in your pack | added |
+| Mod removed from your pack | removed |
+| Client-only mod | skipped, and removed if present |
+| Mod added directly on the server | never touched |
+
+Detection uses the [Modrinth](https://modrinth.com) API (hash lookup for
+`server_side` support) with an offline jar-metadata fallback. Mods whose side can't
+be determined are kept, not dropped.
+
 ### Commands
 
 | Command | Description |
 | --- | --- |
 | `mcmove.py` | Run the interactive move wizard |
+| `mcmove.py sync` | Patch a server's mods to match a local instance |
 | `mcmove.py list` | List saved servers |
 | `mcmove.py add-server [--url URL]` | Save a server profile |
 | `mcmove.py remove-server NAME` | Delete a saved server |
 | `mcmove.py move --src PATH` | Skip the source-folder prompt |
 
-Config and backups live in `~/.config/mcmove/`.
+Config, per-server mod state, and backups live in `~/.config/mcmove/`.
 
 ### Notes
 
@@ -115,18 +148,14 @@ Config and backups live in `~/.config/mcmove/`.
 
 Ideas and contributions welcome:
 
-- **Skip client-only mods automatically** — read each jar's mod metadata
-  (`environment` / dist) or a `.mrpack` index and drop client-side mods when the
-  target is a dedicated server.
 - **Install straight from a `.mrpack`** — resolve the modpack index and download only
   server-side mods, no manual instance folder needed.
 - **Reverse sync** — pull a world or files back from the server (one-shot backups).
 - **`pipx` install / `mcmove` entry point** — drop the `python3 mcmove.py` prefix.
-- **Delta uploads** — skip unchanged files to speed up repeat syncs.
-- **Dry run** — print the plan without transferring.
+- **Delta uploads for worlds/configs** — skip unchanged files (mods already do this).
 - **Optional keychain integration** — store the password in the OS keychain for
   hands-free connects.
-- **Non-interactive flags** — fully scriptable runs for automation.
+- **Fully non-interactive `move`** — flags for scripted world/config transfers.
 
 ## Maintainers
 
