@@ -1,0 +1,7 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# config/backups live in ~/.config/mcmove, but ignore any local copies
+.config/
