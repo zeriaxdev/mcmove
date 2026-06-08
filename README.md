@@ -138,6 +138,25 @@ your client-only mods (shaders, minimaps, texture mods) are always safe. `--mirr
 additionally removes local *server-side* mods that are no longer on the server, but
 still leaves client-only mods untouched.
 
+### Update mods (`update`)
+
+Check Modrinth for newer versions of your instance's mods and update them locally,
+**per mod**, with a version selector and release-channel control:
+
+```sh
+python3 mcmove.py update                 # release-channel updates, pick per mod
+python3 mcmove.py update --channel beta  # also offer beta versions
+python3 mcmove.py update --all           # take the latest in-channel for everything
+python3 mcmove.py update --dry-run       # preview only
+```
+
+For each mod with an update it shows the current version + the available ones tagged
+`[release]` / `[beta]` / `[alpha]`, and lets you pick which to install (Enter = latest,
+a number = a specific version, `s` = skip). `--channel` sets the widest type allowed
+(`release` ⊂ `beta` ⊂ `alpha`). It downloads the chosen files into your instance and
+removes the superseded jars — then run `mcmove sync` to push the changes to the server.
+Mods not on Modrinth are skipped.
+
 ### Carry single-player inventories onto a server (`playerdata`)
 
 When you move a single-player world to a dedicated server, **player inventories
@@ -168,6 +187,7 @@ and mod data attachments (e.g. Superb Warfare ammo) carry over intact.
 | `mcmove.py` | Run the interactive move wizard |
 | `mcmove.py sync` | Patch a server's mods to match a local instance (local → server) |
 | `mcmove.py pull [--mirror]` | Patch a local instance from the server (server → local) |
+| `mcmove.py update [--channel] [--all]` | Update the instance's mods from Modrinth, per mod |
 | `mcmove.py playerdata` | Build server `playerdata/<uuid>.dat` from single-player `level.dat` files |
 | `mcmove.py whois [UUID…]` | Resolve UUIDs to usernames (args, `--dir`, or a server's `playerdata`) |
 | `mcmove.py list` | List saved servers |
