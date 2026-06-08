@@ -108,16 +108,61 @@ Detection uses the [Modrinth](https://modrinth.com) API (hash lookup for
 `server_side` support) with an offline jar-metadata fallback. Mods whose side can't
 be determined are kept, not dropped.
 
+### Pull mods from the server (reverse)
+
+To patch your **local** instance from the server — e.g. a friend's machine catching
+up to the server, or you reconciling after the server changed:
+
+```sh
+python3 mcmove.py pull                  # server → local, add/update only
+python3 mcmove.py pull --dry-run        # preview
+python3 mcmove.py pull --mirror         # also remove local server-side mods gone from the server
+```
+
+`pull` is **additive + update only by default — it never deletes a local mod**, so
+your client-only mods (shaders, minimaps, texture mods) are always safe. `--mirror`
+additionally removes local *server-side* mods that are no longer on the server, but
+still leaves client-only mods untouched.
+
+### Carry single-player inventories onto a server (`playerdata`)
+
+When you move a single-player world to a dedicated server, **player inventories
+don't come along** — in single-player your inventory (and mod data like ammo) lives
+in `level.dat`'s `Data → Player` tag, but a server reads `playerdata/<uuid>.dat`
+instead. `playerdata` bridges that: it extracts the `Player` tag from each person's
+`level.dat` and writes a proper `playerdata/<uuid>.dat`, then optionally uploads them.
+
+```sh
+pip install nbtlib    # one-time, for NBT handling
+
+# interactive: add each player's level.dat + username, optionally upload
+python3 mcmove.py playerdata
+
+# one player, straight to a server's world folder
+python3 mcmove.py playerdata --level "~/saves/MyWorld/level.dat" --player Notch \
+    --upload --server survival --world world
+```
+
+Usernames are resolved to UUIDs via Mojang (online-mode servers only). It backs up
+any existing `playerdata` file before overwriting, and inventories, equipped gear,
+and mod data attachments (e.g. Superb Warfare ammo) carry over intact.
+
 ### Commands
 
 | Command | Description |
 | --- | --- |
 | `mcmove.py` | Run the interactive move wizard |
-| `mcmove.py sync` | Patch a server's mods to match a local instance |
+| `mcmove.py sync` | Patch a server's mods to match a local instance (local → server) |
+| `mcmove.py pull [--mirror]` | Patch a local instance from the server (server → local) |
+| `mcmove.py playerdata` | Build server `playerdata/<uuid>.dat` from single-player `level.dat` files |
+| `mcmove.py whois [UUID…]` | Resolve UUIDs to usernames (args, `--dir`, or a server's `playerdata`) |
 | `mcmove.py list` | List saved servers |
 | `mcmove.py add-server [--url URL]` | Save a server profile |
 | `mcmove.py remove-server NAME` | Delete a saved server |
 | `mcmove.py move --src PATH` | Skip the source-folder prompt |
+
+`sync` refuses to remove more than half of the mods it manages without an extra
+confirmation — a guard against accidentally pointing at the wrong/incomplete instance.
 
 Config, per-server mod state, and backups live in `~/.config/mcmove/`.
 
@@ -150,7 +195,7 @@ Ideas and contributions welcome:
 
 - **Install straight from a `.mrpack`** — resolve the modpack index and download only
   server-side mods, no manual instance folder needed.
-- **Reverse sync** — pull a world or files back from the server (one-shot backups).
+- **Reverse sync for worlds/configs** — `pull` handles mods; extend it to worlds and configs.
 - **`pipx` install / `mcmove` entry point** — drop the `python3 mcmove.py` prefix.
 - **Delta uploads for worlds/configs** — skip unchanged files (mods already do this).
 - **Optional keychain integration** — store the password in the OS keychain for
