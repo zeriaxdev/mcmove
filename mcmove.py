@@ -48,7 +48,8 @@ CONFIG_FILE = CONFIG_DIR / "servers.json"
 BACKUP_DIR = CONFIG_DIR / "backups"
 STATE_DIR = CONFIG_DIR / "state"
 MODRINTH_API = "https://api.modrinth.com/v2"
-USER_AGENT = "mcmove/0.3 (github.com/zeriaxdev/mcmove)"
+__version__ = "0.4.0"
+USER_AGENT = f"mcmove/{__version__} (github.com/zeriaxdev/mcmove)"
 
 # ----------------------------------------------------------------------------- color
 _COLOR = (
@@ -1186,6 +1187,7 @@ def main():
     p = argparse.ArgumentParser(
         description="Move worlds/mods/configs into a Pelican server over SFTP."
     )
+    p.add_argument("--version", action="version", version=f"mcmove {__version__}")
     sub = p.add_subparsers(dest="cmd")
 
     sub.add_parser("list", help="list configured servers")
@@ -1277,9 +1279,14 @@ def main():
         run_wizard(args)
 
 
-if __name__ == "__main__":
+def cli():
+    """Console entry point (used by the installed `mcmove` command)."""
     try:
         main()
     except KeyboardInterrupt:
         print("\naborted")
         sys.exit(130)
+
+
+if __name__ == "__main__":
+    cli()

@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcmove"
+description = "Move worlds, mods, and configs between a local Minecraft instance and a Pelican/Pterodactyl server over SFTP."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "zeriax" }]
+keywords = ["minecraft", "modpack", "modrinth", "pelican", "pterodactyl", "sftp"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Games/Entertainment",
+]
+dynamic = ["version"]
+dependencies = [
+    "paramiko>=3.0",
+    "nbtlib>=2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/zeriaxdev/mcmove"
+Repository = "https://github.com/zeriaxdev/mcmove"
+Issues = "https://github.com/zeriaxdev/mcmove/issues"
+
+[project.scripts]
+mcmove = "mcmove:cli"
+
+[tool.setuptools]
+py-modules = ["mcmove"]
+
+[tool.setuptools.dynamic]
+version = { attr = "mcmove.__version__" }

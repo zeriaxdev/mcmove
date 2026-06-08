@@ -43,15 +43,29 @@ exposes (default port `2022`).
 
 ## Install
 
-Requires Python 3.9+ and [paramiko](https://www.paramiko.org/).
+Requires Python 3.9+. Dependencies ([paramiko](https://www.paramiko.org/),
+[nbtlib](https://github.com/vberlier/nbtlib)) are installed automatically.
+
+**Recommended — [pipx](https://pipx.pypa.io/) (installs the `mcmove` command globally, isolated):**
+
+```sh
+pipx install git+https://github.com/zeriaxdev/mcmove.git
+mcmove --version
+```
+
+Then it's just `mcmove sync`, `mcmove pull`, `mcmove playerdata`, etc. — from anywhere.
+
+**From source (for development):**
 
 ```sh
 git clone https://github.com/zeriaxdev/mcmove.git
 cd mcmove
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e .
 ```
+
+> The examples below use `python3 mcmove.py …`; if you installed via pipx, drop the
+> `python3 mcmove.py` and just use `mcmove …`.
 
 ## Usage
 
