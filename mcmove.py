@@ -48,7 +48,7 @@ CONFIG_FILE = CONFIG_DIR / "servers.json"
 BACKUP_DIR = CONFIG_DIR / "backups"
 STATE_DIR = CONFIG_DIR / "state"
 MODRINTH_API = "https://api.modrinth.com/v2"
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 USER_AGENT = f"mcmove/{__version__} (github.com/zeriaxdev/mcmove)"
 
 # ----------------------------------------------------------------------------- color
@@ -342,6 +342,113 @@ def resolve_uuids(names):
         except Exception:  # noqa
             pass
     return out
+
+
+def cmd_update(args):
+    """Check Modrinth for newer mod versions and update the local instance, per mod."""
+    cfg = load_config()
+    src = clean_path(args.src) if args.src else ""
+    if not src:
+        last = next((s["last_src"] for s in cfg.get("servers", {}).values()
+                     if s.get("last_src")), "")
+        src = clean_path(ask("Path to your local Modrinth/Minecraft instance", last))
+    if not os.path.isdir(src):
+        die(f"not a folder: {src}")
+    channel = args.channel or "release"
+    mods_dir = Path(src) / "mods"
+    jars = sorted(mods_dir.glob("*.jar"))
+    if not jars:
+        die("no .jar files in mods/")
+
+    print(f"Resolving {len(jars)} mods on Modrinth (channel: {channel})...")
+    entries = [(p, sha1_of(str(p))) for p in jars]
+    cur = modrinth_version_files([s for _, s in entries])
+
+    plan, unknown, uptodate = [], [], 0
+    allowed = CHANNELS[channel]
+    for p, sha in entries:
+        v = cur.get(sha)
+        if not v:
+            unknown.append(p.name)
+            continue
+        vers = modrinth_versions(v["project_id"], v.get("game_versions", []), v.get("loaders", []))
+        newer = [x for x in vers
+                 if x.get("version_type") in allowed
+                 and x.get("date_published", "") > v.get("date_published", "")]
+        if newer:
+            plan.append({"path": p, "cur": v, "newer": newer})
+        else:
+            uptodate += 1
+
+    print("  " + green(f"{uptodate} up to date") + " · "
+          + yellow(f"{len(plan)} with updates") + " · "
+          + dim(f"{len(unknown)} not on Modrinth"))
+    if not plan:
+        print(green("\nEverything's current. Nothing to do."))
+        return
+
+    # Per-mod version selector (unless --all takes the latest in-channel for each).
+    chosen = []
+    if args.all:
+        for m in plan:
+            m["pick"] = m["newer"][0]
+            chosen.append(m)
+    else:
+        print(dim("\nFor each mod:  Enter = latest · number = pick a version · s = skip\n"))
+        for m in plan:
+            opts = m["newer"][:12]
+            print(yellow(m["path"].name)
+                  + dim(f"   (current {m['cur']['version_number']} [{m['cur']['version_type']}])"))
+            for i, x in enumerate(opts, 1):
+                tag = {"release": green, "beta": yellow, "alpha": red}.get(x["version_type"], dim)
+                mark = dim("  (latest)") if i == 1 else ""
+                print(f"   {i}) {x['version_number']:24} {tag('[' + x['version_type'] + ']'):20}"
+                      f" {x.get('date_published', '')[:10]}{mark}")
+            raw = input("   choose [1] / s: ").strip().lower()
+            if raw == "s":
+                continue
+            if raw.isdigit() and 1 <= int(raw) <= len(opts):
+                m["pick"] = opts[int(raw) - 1]
+            else:
+                m["pick"] = opts[0]
+            chosen.append(m)
+
+    if not chosen:
+        print("nothing selected")
+        return
+
+    print(bold("\nPlan:"))
+    for m in chosen:
+        print("  " + yellow(f"~ {m['path'].name}")
+              + dim(f"  {m['cur']['version_number']}") + "  →  "
+              + green(f"{m['pick']['version_number']} [{m['pick']['version_type']}]"))
+    if args.dry_run:
+        print(cyan("\n(dry run — no changes made)"))
+        return
+    if not confirm("\nDownload and apply these to the local instance?", default=True):
+        print("aborted")
+        return
+
+    tmp = Path(tempfile.mkdtemp(prefix="mcmove-update-"))
+    try:
+        for m in chosen:
+            f = _primary_file(m["pick"])
+            if not f:
+                print(red(f"  ! {m['path'].name}: no downloadable file, skipping"))
+                continue
+            newp = tmp / f["filename"]
+            download_file(f["url"], newp)
+            shutil.move(str(newp), str(mods_dir / f["filename"]))
+            if m["path"].name != f["filename"]:      # version-bumped filename -> drop the old jar
+                try:
+                    m["path"].unlink()
+                except OSError:
+                    pass
+            print(green(f"  ↑ {m['path'].name} → {f['filename']}"))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    print(green(bold("\n✓ Local instance updated."))
+          + dim("  Run `mcmove sync` to push the changes to the server."))
 
 
 def uuid_to_name(uuid):
@@ -717,6 +824,56 @@ def modrinth_sides(hashes):
         except Exception:  # noqa
             pass
     return {h: (pid, side_by_pid.get(pid)) for h, pid in proj_by_hash.items()}
+
+
+# Channel = which release types are acceptable, widest-to-narrowest.
+CHANNELS = {
+    "release": {"release"},
+    "beta": {"release", "beta"},
+    "alpha": {"release", "beta", "alpha"},
+}
+
+
+def modrinth_version_files(hashes):
+    """sha1 -> the Modrinth version object that file belongs to (or {} on failure)."""
+    if not hashes:
+        return {}
+    try:
+        return _http_json(f"{MODRINTH_API}/version_files",
+                          {"hashes": hashes, "algorithm": "sha1"})
+    except Exception:  # noqa
+        return {}
+
+
+def modrinth_versions(project_id, game_versions, loaders):
+    """All versions of a project, filtered to a game version + loader. Newest first."""
+    params = []
+    if game_versions:
+        params.append("game_versions=" + urllib.parse.quote(json.dumps(sorted(set(game_versions)))))
+    if loaders:
+        params.append("loaders=" + urllib.parse.quote(json.dumps(sorted(set(loaders)))))
+    url = f"{MODRINTH_API}/project/{project_id}/version"
+    if params:
+        url += "?" + "&".join(params)
+    try:
+        vers = _http_json(url)
+        vers.sort(key=lambda x: x.get("date_published", ""), reverse=True)
+        return vers
+    except Exception:  # noqa
+        return []
+
+
+def _primary_file(version):
+    files = version.get("files", [])
+    if not files:
+        return None
+    return next((f for f in files if f.get("primary")), files[0])
+
+
+def download_file(url, dest):
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as out:
+        shutil.copyfileobj(r, out)
 
 
 def read_jar_meta(path):
@@ -1249,6 +1406,23 @@ def main():
     pd.add_argument("--server", help="server name for --upload")
     pd.add_argument("--world", help="server world folder (level-name) for --upload")
 
+    upd = sub.add_parser(
+        "update",
+        help="check Modrinth for newer mod versions and update the local instance",
+    )
+    upd.add_argument("--src", help="path to local instance (otherwise remembered/asked)")
+    upd.add_argument(
+        "--channel",
+        choices=["release", "beta", "alpha"],
+        help="newest release channel to allow (default: release)",
+    )
+    upd.add_argument(
+        "--all",
+        action="store_true",
+        help="take the latest in-channel for every mod (no per-mod prompts)",
+    )
+    upd.add_argument("--dry-run", action="store_true", help="show the plan, change nothing")
+
     who = sub.add_parser(
         "whois",
         help="resolve UUIDs to usernames (args, a folder, or a server's playerdata)",
@@ -1273,6 +1447,8 @@ def main():
         cmd_playerdata(args)
     elif args.cmd == "whois":
         cmd_whois(args)
+    elif args.cmd == "update":
+        cmd_update(args)
     else:  # move / default
         if not hasattr(args, "src"):
             args.src = None
