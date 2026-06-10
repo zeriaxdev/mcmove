@@ -210,6 +210,48 @@ fn read_jar_meta(path: &Path) -> (Option<String>, Option<String>) {
     (None, None)
 }
 
+/// Like `read_jar_meta`, but the second value is the mod's *environment* —
+/// `client` / `server` / `both` from fabric.mod.json, `None` for forge/neoforge
+/// (their toml has no reliable side info) or unparseable jars.
+pub fn jar_id_and_env(path: &Path) -> (Option<String>, Option<String>) {
+    let Ok(file) = fs::File::open(path) else {
+        return (None, None);
+    };
+    let Ok(mut zip) = ZipArchive::new(file) else {
+        return (None, None);
+    };
+
+    if let Ok(mut f) = zip.by_name("fabric.mod.json") {
+        #[derive(Deserialize)]
+        struct FabricMod {
+            id: String,
+            #[serde(default)]
+            environment: Option<String>,
+        }
+        let mut buf = String::new();
+        if f.read_to_string(&mut buf).is_ok() {
+            if let Ok(m) = serde_json::from_str::<FabricMod>(&buf) {
+                let env = match m.environment.as_deref() {
+                    Some("client") => "client",
+                    Some("server") => "server",
+                    _ => "both",
+                };
+                return (Some(m.id), Some(env.into()));
+            }
+        }
+    }
+    for name in ["META-INF/neoforge.mods.toml", "META-INF/mods.toml"] {
+        let Ok(f) = zip.by_name(name) else { continue };
+        let mut buf = String::new();
+        if f.take(1 << 20).read_to_string(&mut buf).is_ok() {
+            if let Some(id) = toml_mod_id(&buf) {
+                return (Some(id), None);
+            }
+        }
+    }
+    (None, None)
+}
+
 /// Extract the first `modId = "<id>"` from a mods.toml without a TOML parser.
 fn toml_mod_id(toml: &str) -> Option<String> {
     for line in toml.lines() {

@@ -13,8 +13,11 @@
 pub mod config;
 pub mod modrinth;
 pub mod mojang;
+pub mod nbt;
 pub mod pack;
 pub mod progress;
+pub mod sftp;
+pub mod syncmods;
 
 pub use progress::{Progress, Reporter};
 

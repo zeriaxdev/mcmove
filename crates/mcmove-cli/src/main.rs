@@ -4,9 +4,12 @@
 //! and prompts on the terminal. Remaining Python-only commands are stubbed during the
 //! migration (see MIGRATION.md) and filled in stage by stage.
 
+mod connect;
 mod pack;
+mod playerdata;
 mod report;
 mod servers;
+mod synccmd;
 mod update;
 mod util;
 mod whois;
@@ -35,9 +38,33 @@ enum Command {
     /// Remove a server profile.
     RemoveServer { name: String },
     /// Push: patch a server's /mods to match the local instance.
-    Sync,
-    /// Reverse: server mods → local instance.
-    Pull,
+    Sync {
+        /// Saved server name (otherwise you'll be asked).
+        #[arg(long)]
+        server: Option<String>,
+        /// Path to local instance (otherwise remembered/asked).
+        #[arg(long)]
+        src: Option<String>,
+        /// Show the plan, change nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Reverse: download the server's mods into your local instance.
+    Pull {
+        /// Saved server name (otherwise you'll be asked).
+        #[arg(long)]
+        server: Option<String>,
+        /// Path to local instance (otherwise remembered/asked).
+        #[arg(long)]
+        src: Option<String>,
+        /// Show the plan, change nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// Also remove local SERVER-SIDE mods missing from the server
+        /// (client-only mods are always kept).
+        #[arg(long)]
+        mirror: bool,
+    },
     /// Check Modrinth for newer mod versions and update the local instance.
     Update {
         /// Path to local instance (otherwise remembered/asked).
@@ -54,14 +81,39 @@ enum Command {
         dry_run: bool,
     },
     /// Build server playerdata/<uuid>.dat from single-player level.dat.
-    Playerdata,
-    /// Resolve UUIDs to usernames (args or a folder of <uuid>.dat files).
+    Playerdata {
+        /// Path to a single-player level.dat (omit for interactive batch).
+        #[arg(long)]
+        level: Option<String>,
+        /// Username or UUID this level.dat belongs to.
+        #[arg(long)]
+        player: Option<String>,
+        /// Output dir (default ~/.config/mcmove/playerdata-out).
+        #[arg(long)]
+        out: Option<String>,
+        /// Upload results to a server's <world>/playerdata.
+        #[arg(long)]
+        upload: bool,
+        /// Server name for --upload.
+        #[arg(long)]
+        server: Option<String>,
+        /// Server world folder (level-name) for --upload.
+        #[arg(long)]
+        world: Option<String>,
+    },
+    /// Resolve UUIDs to usernames (args, a folder, or a server's playerdata).
     Whois {
         /// One or more UUIDs to look up.
         uuid: Vec<String>,
         /// A local folder of <uuid>.dat files.
         #[arg(long)]
         dir: Option<String>,
+        /// Read the server's <world>/playerdata listing.
+        #[arg(long)]
+        server: Option<String>,
+        /// Server world folder (level-name).
+        #[arg(long)]
+        world: Option<String>,
     },
     /// Modpack patcher: create/share/apply a PC→PC mod-folder patch.
     Pack {
@@ -123,7 +175,41 @@ async fn main() -> anyhow::Result<()> {
             all,
             dry_run,
         } => update::run(src, channel, all, dry_run).await,
-        Command::Whois { uuid, dir } => whois::run(uuid, dir).await,
+        Command::Whois {
+            uuid,
+            dir,
+            server,
+            world,
+        } => whois::run(uuid, dir, server, world).await,
+        Command::Sync {
+            server,
+            src,
+            dry_run,
+        } => synccmd::sync(server, src, dry_run).await,
+        Command::Pull {
+            server,
+            src,
+            dry_run,
+            mirror,
+        } => synccmd::pull(server, src, dry_run, mirror).await,
+        Command::Playerdata {
+            level,
+            player,
+            out,
+            upload,
+            server,
+            world,
+        } => {
+            playerdata::run(playerdata::Args {
+                level,
+                player,
+                out,
+                upload,
+                server,
+                world,
+            })
+            .await
+        }
         Command::Pack { action } => match action {
             PackAction::Create { instance, out } => pack::create(&instance, out).await,
             PackAction::Share {
@@ -139,10 +225,5 @@ async fn main() -> anyhow::Result<()> {
                 yes,
             } => pack::apply(&patch, &instance, dry_run, keep_extra, yes).await,
         },
-        Command::Sync | Command::Pull | Command::Playerdata => {
-            anyhow::bail!(
-                "not yet ported to Rust — see MIGRATION.md (still available via mcmove.py)"
-            );
-        }
     }
 }
