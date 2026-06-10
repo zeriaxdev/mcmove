@@ -157,6 +157,39 @@ a number = a specific version, `s` = skip). `--channel` sets the widest type all
 removes the superseded jars — then run `mcmove sync` to push the changes to the server.
 Mods not on Modrinth are skipped.
 
+### Share a mod update patch with a friend
+
+For PC → PC mod-folder updates without SFTP, use the standalone Go sidecar:
+
+```sh
+go run modpack_patch.go share ~/packs/create-plus
+```
+
+`share` creates the patch, uploads it to Filebin, and prints a short code plus a
+full link. Filebin bins are temporary public links, so do not use this for private
+packs you are not comfortable uploading.
+
+To make a dependency-free Windows executable from macOS:
+
+```sh
+GOOS=windows GOARCH=amd64 go build -o modpack-patch.exe modpack_patch.go
+```
+
+Send your friend `modpack-patch.exe` and the short code. They can preview the same
+git-diff-style plan and then accept it:
+
+```powershell
+.\modpack-patch.exe apply mcmove-abc123xy "C:\Path\To\Instance" --dry-run
+.\modpack-patch.exe apply mcmove-abc123xy "C:\Path\To\Instance"
+```
+
+`apply` also accepts a local `.mcmpatch` path or a full HTTPS link.
+
+The patch downloads Modrinth-recognized jars directly on their machine and only
+bundles jars that Modrinth cannot identify. By default, applying the patch mirrors
+the source `mods/` folder, including removals; pass `--keep-extra` if the receiver
+wants to keep personal local-only jars.
+
 ### Carry single-player inventories onto a server (`playerdata`)
 
 When you move a single-player world to a dedicated server, **player inventories

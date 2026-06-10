@@ -8,3 +8,7 @@ dist/
 
 # config/backups live in ~/.config/mcmove
 .config/
+
+# build artifacts and generated patch bundles
+*.exe
+*.mcmpatch
