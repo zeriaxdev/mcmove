@@ -1,11 +1,15 @@
 //! mcmove CLI — a thin front-end over `mcmove-core`.
 //!
 //! All real work lives in the core crate. This binary only parses args, renders progress,
-//! and prompts for secrets on the terminal. Commands are stubbed during the Rust migration
-//! (see MIGRATION.md) and filled in stage by stage.
+//! and prompts on the terminal. Remaining Python-only commands are stubbed during the
+//! migration (see MIGRATION.md) and filled in stage by stage.
 
 mod pack;
 mod report;
+mod servers;
+mod update;
+mod util;
+mod whois;
 
 use std::path::PathBuf;
 
@@ -20,16 +24,45 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// List configured servers.
+    List,
+    /// Add a server profile (from the panel's SFTP Details).
+    AddServer {
+        /// Paste the panel's sftp://user@host:port string.
+        #[arg(long)]
+        url: Option<String>,
+    },
+    /// Remove a server profile.
+    RemoveServer { name: String },
     /// Push: patch a server's /mods to match the local instance.
     Sync,
     /// Reverse: server mods → local instance.
     Pull,
     /// Check Modrinth for newer mod versions and update the local instance.
-    Update,
+    Update {
+        /// Path to local instance (otherwise remembered/asked).
+        #[arg(long)]
+        src: Option<String>,
+        /// Newest release channel to allow.
+        #[arg(long, default_value = "release", value_parser = ["release", "beta", "alpha"])]
+        channel: String,
+        /// Take the latest in-channel for every mod (no per-mod prompts).
+        #[arg(long)]
+        all: bool,
+        /// Show the plan, change nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Build server playerdata/<uuid>.dat from single-player level.dat.
     Playerdata,
-    /// UUID → username lookup.
-    Whois,
+    /// Resolve UUIDs to usernames (args or a folder of <uuid>.dat files).
+    Whois {
+        /// One or more UUIDs to look up.
+        uuid: Vec<String>,
+        /// A local folder of <uuid>.dat files.
+        #[arg(long)]
+        dir: Option<String>,
+    },
     /// Modpack patcher: create/share/apply a PC→PC mod-folder patch.
     Pack {
         #[command(subcommand)]
@@ -81,6 +114,16 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Command::List => servers::list(),
+        Command::AddServer { url } => servers::add(url),
+        Command::RemoveServer { name } => servers::remove(&name),
+        Command::Update {
+            src,
+            channel,
+            all,
+            dry_run,
+        } => update::run(src, channel, all, dry_run).await,
+        Command::Whois { uuid, dir } => whois::run(uuid, dir).await,
         Command::Pack { action } => match action {
             PackAction::Create { instance, out } => pack::create(&instance, out).await,
             PackAction::Share {
@@ -96,7 +139,7 @@ async fn main() -> anyhow::Result<()> {
                 yes,
             } => pack::apply(&patch, &instance, dry_run, keep_extra, yes).await,
         },
-        Command::Sync | Command::Pull | Command::Update | Command::Playerdata | Command::Whois => {
+        Command::Sync | Command::Pull | Command::Playerdata => {
             anyhow::bail!(
                 "not yet ported to Rust — see MIGRATION.md (still available via mcmove.py)"
             );

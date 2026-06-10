@@ -1268,6 +1268,7 @@ version = "0.6.0"
 dependencies = [
  "anyhow",
  "clap",
+ "dirs",
  "indicatif",
  "mcmove-core",
  "tempfile",

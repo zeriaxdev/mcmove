@@ -18,3 +18,4 @@ clap.workspace = true
 indicatif.workspace = true
 anyhow.workspace = true
 tempfile.workspace = true
+dirs.workspace = true
