@@ -4,7 +4,10 @@
 //! and prompts for secrets on the terminal. Commands are stubbed during the Rust migration
 //! (see MIGRATION.md) and filled in stage by stage.
 
+mod pack;
 mod report;
+
+use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
@@ -37,25 +40,55 @@ enum Command {
 #[derive(Subcommand)]
 enum PackAction {
     /// Snapshot the local instance's mods into a .mcmpatch.
-    Create,
-    /// Create a patch and upload it for a short share code.
-    Share,
+    Create {
+        /// Path to the local Minecraft instance (the folder containing mods/).
+        instance: PathBuf,
+        /// Output patch path (default: <instance-name>.mcmpatch).
+        #[arg(short, long)]
+        out: Option<PathBuf>,
+    },
+    /// Create a patch and upload it to Filebin for a short share code.
+    Share {
+        /// Path to the local Minecraft instance.
+        instance: PathBuf,
+        /// Filebin bin code to upload into (default: random mcmove-XXXXXXXX).
+        #[arg(long)]
+        bin: Option<String>,
+        /// Filename inside the bin.
+        #[arg(long, default_value = "pack.mcmpatch")]
+        filename: String,
+    },
     /// Apply a .mcmpatch (path, URL, or share code) to an instance.
-    Apply,
+    Apply {
+        /// Patch source: a .mcmpatch path, an https URL, or a share code.
+        patch: String,
+        /// Path to the instance to patch.
+        instance: PathBuf,
+        /// Show the plan without changing anything.
+        #[arg(long)]
+        dry_run: bool,
+        /// Keep local mods that are not in the patch (default mirrors removals).
+        #[arg(long)]
+        keep_extra: bool,
+        /// Skip the confirmation prompt.
+        #[arg(short, long)]
+        yes: bool,
+    },
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let _reporter = report::CliReporter::new();
 
     match cli.command {
-        Command::Sync
-        | Command::Pull
-        | Command::Update
-        | Command::Playerdata
-        | Command::Whois
-        | Command::Pack { .. } => {
+        Command::Pack { action } => match action {
+            PackAction::Create { instance, out } => pack::create(&instance, out).await,
+            PackAction::Share { instance, bin, filename } => pack::share(&instance, bin, filename).await,
+            PackAction::Apply { patch, instance, dry_run, keep_extra, yes } => {
+                pack::apply(&patch, &instance, dry_run, keep_extra, yes).await
+            }
+        },
+        Command::Sync | Command::Pull | Command::Update | Command::Playerdata | Command::Whois => {
             anyhow::bail!("not yet ported to Rust — see MIGRATION.md (still available via mcmove.py)");
         }
     }

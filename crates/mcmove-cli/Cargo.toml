@@ -17,3 +17,4 @@ tokio.workspace = true
 clap.workspace = true
 indicatif.workspace = true
 anyhow.workspace = true
+tempfile.workspace = true

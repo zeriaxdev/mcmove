@@ -53,8 +53,12 @@ Windows friend.
 ## Staged plan (Python stays working until Rust hits parity)
 - **Stage 0 — Setup.** Gitignore artifacts; commit Go sidecar. *(done — commit acf0941)*
 - **Stage 1 — Scaffold.** Workspace + two crates; pin deps; prove the Windows cross-compile.
+  *(done — commit 4be3eaa)*
 - **Stage 2 — Patcher first.** Port `create`/`share`/`apply` from `modpack_patch.go`
   (self-contained, proven, friend-facing — validates the whole toolchain).
+  *(done — `mcmove pack create|share|apply`; format-compatible with Go patches, verified
+  against a real Go-built `.mcmpatch` + synthetic add/update/remove round trips + a live
+  Modrinth download with sha1 verify)*
 - **Stage 3 — `mcmove-core` modules, one at a time, each verified live:**
   `modrinth` → `nbt`/playerdata → `sftp` → state manifest → commands
   (`whois`, `update`, `sync`, `pull`, `playerdata`, `move`, server profiles).

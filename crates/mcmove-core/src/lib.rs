@@ -10,6 +10,8 @@
 //! - **It never prompts.** Secrets are fetched through a [`Credentials`] callback so a GUI
 //!   can present a native prompt.
 
+pub mod modrinth;
+pub mod pack;
 pub mod progress;
 
 pub use progress::{Progress, Reporter};
@@ -23,6 +25,8 @@ pub enum Error {
     Http(#[from] reqwest::Error),
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("zip: {0}")]
+    Zip(#[from] zip::result::ZipError),
     #[error("{0}")]
     Other(String),
 }
