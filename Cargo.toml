@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = ["crates/mcmove-core", "crates/mcmove-cli"]
+
+[workspace.package]
+version = "0.6.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/zeriaxdev/mcmove"
+authors = ["zeriax"]
+
+# Shared dependency versions, referenced by member crates via `workspace = true`.
+[workspace.dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "process"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+russh = "0.46"
+russh-sftp = "2"
+fastnbt = "2"
+flate2 = "1"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+sha1 = "0.10"
+hex = "0.4"
+anyhow = "1"
+thiserror = "2"
+dirs = "5"
+futures = "0.3"
+clap = { version = "4", features = ["derive"] }
+indicatif = "0.17"
+
+[profile.release]
+strip = true
+lto = "thin"
+opt-level = "z"

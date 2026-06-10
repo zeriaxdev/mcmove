@@ -1,0 +1,19 @@
+[package]
+name = "mcmove-cli"
+description = "mcmove command-line interface — a thin front-end over mcmove-core."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "mcmove"
+path = "src/main.rs"
+
+[dependencies]
+mcmove-core = { path = "../mcmove-core" }
+tokio.workspace = true
+clap.workspace = true
+indicatif.workspace = true
+anyhow.workspace = true

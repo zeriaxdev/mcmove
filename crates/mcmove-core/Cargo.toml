@@ -1,0 +1,25 @@
+[package]
+name = "mcmove-core"
+description = "Core logic for mcmove: SFTP, NBT, Modrinth, and the modpack patcher. UI-agnostic, embeddable."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+tokio.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+russh.workspace = true
+russh-sftp.workspace = true
+fastnbt.workspace = true
+flate2.workspace = true
+zip.workspace = true
+sha1.workspace = true
+hex.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+dirs.workspace = true
+futures.workspace = true

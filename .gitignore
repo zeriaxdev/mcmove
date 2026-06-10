@@ -12,3 +12,6 @@ dist/
 # build artifacts and generated patch bundles
 *.exe
 *.mcmpatch
+
+# rust (Cargo.lock is committed — this workspace ships a binary)
+/target/
