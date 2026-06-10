@@ -12,7 +12,9 @@ pub struct CliReporter {
 
 impl CliReporter {
     pub fn new() -> Self {
-        Self { bar: Mutex::new(None) }
+        Self {
+            bar: Mutex::new(None),
+        }
     }
 }
 

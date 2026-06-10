@@ -97,7 +97,10 @@ pub async fn scan_mods(
 ) -> Result<Vec<ModEntry>> {
     let mods_dir = instance.join("mods");
     if !mods_dir.is_dir() {
-        return Err(Error::Other(format!("no mods/ folder in {}", instance.display())));
+        return Err(Error::Other(format!(
+            "no mods/ folder in {}",
+            instance.display()
+        )));
     }
     let mut paths: Vec<PathBuf> = fs::read_dir(&mods_dir)?
         .filter_map(|e| e.ok().map(|e| e.path()))
@@ -105,10 +108,15 @@ pub async fn scan_mods(
         .collect();
     paths.sort();
     if paths.is_empty() {
-        return Err(Error::Other(format!("no .jar files in {}", mods_dir.display())));
+        return Err(Error::Other(format!(
+            "no .jar files in {}",
+            mods_dir.display()
+        )));
     }
 
-    reporter.report(Progress::Phase { name: format!("Scanning {} jar(s)", paths.len()) });
+    reporter.report(Progress::Phase {
+        name: format!("Scanning {} jar(s)", paths.len()),
+    });
     let mut entries = Vec::with_capacity(paths.len());
     let mut hashes = Vec::with_capacity(paths.len());
     for p in paths {
@@ -126,7 +134,10 @@ pub async fn scan_mods(
 
     let hits = modrinth::version_files(client, &hashes, reporter).await;
     for e in &mut entries {
-        if let Some((v, f)) = hits.get(&e.sha1).and_then(|v| v.file_with_sha1(&e.sha1).map(|f| (v, f))) {
+        if let Some((v, f)) = hits
+            .get(&e.sha1)
+            .and_then(|v| v.file_with_sha1(&e.sha1).map(|f| (v, f)))
+        {
             e.key = format!("modrinth:{}", v.project_id);
             e.source = "modrinth".into();
             e.project_id = Some(v.project_id.clone());
@@ -137,7 +148,11 @@ pub async fn scan_mods(
             e.loaders = v.loaders.clone();
             e.download = Some(DownloadRef {
                 url: f.url.clone(),
-                filename: if f.filename.is_empty() { e.filename.clone() } else { f.filename.clone() },
+                filename: if f.filename.is_empty() {
+                    e.filename.clone()
+                } else {
+                    f.filename.clone()
+                },
                 size: if f.size == 0 { e.size } else { f.size },
                 sha1: e.sha1.clone(),
             });
@@ -153,14 +168,20 @@ pub async fn scan_mods(
             e.loader = loader;
         }
     }
-    reporter.report(Progress::PhaseDone { name: format!("Scanned {} jar(s)", entries.len()) });
+    reporter.report(Progress::PhaseDone {
+        name: format!("Scanned {} jar(s)", entries.len()),
+    });
     Ok(entries)
 }
 
 /// Read a mod's id + loader from inside the jar, for jars Modrinth doesn't know.
 fn read_jar_meta(path: &Path) -> (Option<String>, Option<String>) {
-    let Ok(file) = fs::File::open(path) else { return (None, None) };
-    let Ok(mut zip) = ZipArchive::new(file) else { return (None, None) };
+    let Ok(file) = fs::File::open(path) else {
+        return (None, None);
+    };
+    let Ok(mut zip) = ZipArchive::new(file) else {
+        return (None, None);
+    };
 
     if let Ok(mut f) = zip.by_name("fabric.mod.json") {
         #[derive(Deserialize)]
@@ -174,7 +195,10 @@ fn read_jar_meta(path: &Path) -> (Option<String>, Option<String>) {
             }
         }
     }
-    for (name, loader) in [("META-INF/neoforge.mods.toml", "neoforge"), ("META-INF/mods.toml", "forge")] {
+    for (name, loader) in [
+        ("META-INF/neoforge.mods.toml", "neoforge"),
+        ("META-INF/mods.toml", "forge"),
+    ] {
         let Ok(f) = zip.by_name(name) else { continue };
         let mut buf = String::new();
         if f.take(1 << 20).read_to_string(&mut buf).is_ok() {
@@ -189,8 +213,12 @@ fn read_jar_meta(path: &Path) -> (Option<String>, Option<String>) {
 /// Extract the first `modId = "<id>"` from a mods.toml without a TOML parser.
 fn toml_mod_id(toml: &str) -> Option<String> {
     for line in toml.lines() {
-        let Some(rest) = line.trim_start().strip_prefix("modId") else { continue };
-        let Some(rest) = rest.trim_start().strip_prefix('=') else { continue };
+        let Some(rest) = line.trim_start().strip_prefix("modId") else {
+            continue;
+        };
+        let Some(rest) = rest.trim_start().strip_prefix('=') else {
+            continue;
+        };
         let rest = rest.trim_start();
         let quote = rest.chars().next()?;
         if quote == '"' || quote == '\'' {
@@ -204,7 +232,11 @@ fn toml_mod_id(toml: &str) -> Option<String> {
 }
 
 /// Write the `.mcmpatch` zip: manifest.json + the jars Modrinth can't provide.
-pub fn write_bundle(entries: &[ModEntry], out_path: &Path, source_instance: &str) -> Result<Manifest> {
+pub fn write_bundle(
+    entries: &[ModEntry],
+    out_path: &Path,
+    source_instance: &str,
+) -> Result<Manifest> {
     let man = Manifest {
         format: FORMAT,
         created_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
@@ -217,7 +249,9 @@ pub fn write_bundle(entries: &[ModEntry], out_path: &Path, source_instance: &str
     zw.start_file("manifest.json", opts)?;
     zw.write_all(&serde_json::to_vec_pretty(&man)?)?;
     for e in entries.iter().filter(|e| e.source == "bundled") {
-        let asset = e.asset.as_deref().ok_or_else(|| Error::Other(format!("{}: bundled entry has no asset path", e.filename)))?;
+        let asset = e.asset.as_deref().ok_or_else(|| {
+            Error::Other(format!("{}: bundled entry has no asset path", e.filename))
+        })?;
         zw.start_file(asset, opts)?;
         let mut input = fs::File::open(&e.path)?;
         std::io::copy(&mut input, &mut zw)?;
@@ -228,7 +262,8 @@ pub fn write_bundle(entries: &[ModEntry], out_path: &Path, source_instance: &str
 
 pub fn load_bundle(path: &Path) -> Result<(ZipArchive<fs::File>, Manifest)> {
     let file = fs::File::open(path)?;
-    let mut zip = ZipArchive::new(file).map_err(|_| Error::Other(format!("not a patch zip: {}", path.display())))?;
+    let mut zip = ZipArchive::new(file)
+        .map_err(|_| Error::Other(format!("not a patch zip: {}", path.display())))?;
     let man: Manifest = {
         let f = zip
             .by_name("manifest.json")
@@ -236,7 +271,10 @@ pub fn load_bundle(path: &Path) -> Result<(ZipArchive<fs::File>, Manifest)> {
         serde_json::from_reader(f)?
     };
     if man.format != FORMAT {
-        return Err(Error::Other(format!("unsupported patch format: {}", man.format)));
+        return Err(Error::Other(format!(
+            "unsupported patch format: {}",
+            man.format
+        )));
     }
     Ok((zip, man))
 }
@@ -290,7 +328,9 @@ pub async fn execute_plan(
     let staging = tempfile::tempdir()?;
     for m in &plan.remove {
         if fs::remove_file(&m.path).is_ok() {
-            reporter.report(Progress::Info { message: format!("- {}", m.filename) });
+            reporter.report(Progress::Info {
+                message: format!("- {}", m.filename),
+            });
         }
     }
     for (old, new) in &plan.update {
@@ -300,12 +340,16 @@ pub async fn execute_plan(
             let _ = fs::remove_file(&old.path);
         }
         move_replace(&got, &dest)?;
-        reporter.report(Progress::Info { message: format!("~ {} -> {}", old.filename, new.filename) });
+        reporter.report(Progress::Info {
+            message: format!("~ {} -> {}", old.filename, new.filename),
+        });
     }
     for m in &plan.add {
         let got = fetch_desired(archive, m, staging.path(), client).await?;
         move_replace(&got, &mods_dir.join(safe_name(&m.filename)?))?;
-        reporter.report(Progress::Info { message: format!("+ {}", m.filename) });
+        reporter.report(Progress::Info {
+            message: format!("+ {}", m.filename),
+        });
     }
     Ok(())
 }
@@ -325,12 +369,17 @@ async fn fetch_desired(
             .as_ref()
             .map(|d| d.url.as_str())
             .filter(|u| !u.is_empty())
-            .ok_or_else(|| Error::Other(format!("{} has no Modrinth download URL", entry.filename)))?;
+            .ok_or_else(|| {
+                Error::Other(format!("{} has no Modrinth download URL", entry.filename))
+            })?;
         download_file(client, url, &dest).await?;
     } else {
         let asset = entry.asset.as_deref().unwrap_or_default();
         if !asset.starts_with("assets/mods/") || asset.contains("..") {
-            return Err(Error::Other(format!("unsafe bundled asset path for {}", entry.filename)));
+            return Err(Error::Other(format!(
+                "unsafe bundled asset path for {}",
+                entry.filename
+            )));
         }
         let mut f = archive
             .by_name(asset)
@@ -373,7 +422,9 @@ pub async fn resolve_patch_source(
     } else {
         return Err(Error::Other(format!("no such file or share code: {arg}")));
     };
-    reporter.report(Progress::Info { message: format!("Downloading patch: {url}") });
+    reporter.report(Progress::Info {
+        message: format!("Downloading patch: {url}"),
+    });
     let tmp = tempfile::tempdir()?;
     let dest = tmp.path().join(DEFAULT_REMOTE_NAME);
     download_file(client, &url, &dest).await?;
@@ -382,7 +433,12 @@ pub async fn resolve_patch_source(
 
 /// Raw POST to filebin.net/{bin}/{filename}, then lock the bin read-only
 /// (lock failure is non-fatal — the link still works).
-pub async fn upload_filebin(client: &reqwest::Client, bin: &str, filename: &str, path: &Path) -> Result<String> {
+pub async fn upload_filebin(
+    client: &reqwest::Client,
+    bin: &str,
+    filename: &str,
+    path: &Path,
+) -> Result<String> {
     let url = format!("{FILEBIN}/{bin}/{filename}");
     let body = fs::read(path)?;
     let resp = client
@@ -394,7 +450,10 @@ pub async fn upload_filebin(client: &reqwest::Client, bin: &str, filename: &str,
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(Error::Other(format!("filebin upload failed: {status} {}", text.trim())));
+        return Err(Error::Other(format!(
+            "filebin upload failed: {status} {}",
+            text.trim()
+        )));
     }
     let _ = client.put(format!("{FILEBIN}/{bin}")).send().await;
     Ok(url)
@@ -404,17 +463,24 @@ pub fn random_code() -> String {
     const ALPHABET: &[u8] = b"abcdefghijkmnopqrstuvwxyz23456789";
     let mut buf = [0u8; 8];
     if getrandom::fill(&mut buf).is_err() {
-        let nanos = std::time::UNIX_EPOCH.elapsed().map(|d| d.subsec_nanos()).unwrap_or(0);
+        let nanos = std::time::UNIX_EPOCH
+            .elapsed()
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0);
         buf.copy_from_slice(&nanos.to_le_bytes().repeat(2)[..8]);
     }
-    let code: String = buf.iter().map(|b| ALPHABET[*b as usize % ALPHABET.len()] as char).collect();
+    let code: String = buf
+        .iter()
+        .map(|b| ALPHABET[*b as usize % ALPHABET.len()] as char)
+        .collect();
     format!("mcmove-{code}")
 }
 
 pub fn valid_bin(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 80
-        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 /// Reject filenames that could escape mods/ when joined.
@@ -443,5 +509,8 @@ pub fn sha1_of(path: &Path) -> Result<String> {
 }
 
 fn file_name(p: &Path) -> String {
-    p.file_name().unwrap_or_default().to_string_lossy().into_owned()
+    p.file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned()
 }

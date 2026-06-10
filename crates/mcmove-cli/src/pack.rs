@@ -6,8 +6,8 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context};
-use mcmove_core::pack::{self, ModEntry, Plan};
 use mcmove_core::modrinth;
+use mcmove_core::pack::{self, ModEntry, Plan};
 
 use crate::report::CliReporter;
 
@@ -26,7 +26,10 @@ pub async fn create(instance: &Path, out: Option<PathBuf>) -> anyhow::Result<()>
         man.mods.len(),
         man.mods.len() - n_modrinth,
     );
-    println!("Send {} and the executable to your friend.", file_name(&out_path));
+    println!(
+        "Send {} and the executable to your friend.",
+        file_name(&out_path)
+    );
     Ok(())
 }
 
@@ -96,7 +99,12 @@ pub async fn apply(
         println!("\n(dry run - no changes made)");
         return Ok(());
     }
-    if !yes && !confirm(&format!("\nApply this patch to {}?", instance.display()), true) {
+    if !yes
+        && !confirm(
+            &format!("\nApply this patch to {}?", instance.display()),
+            true,
+        )
+    {
         println!("aborted");
         return Ok(());
     }
@@ -147,14 +155,20 @@ fn confirm(prompt: &str, default: bool) -> bool {
 fn has_jars(dir: &Path) -> bool {
     fs::read_dir(dir).is_ok_and(|entries| {
         entries.flatten().any(|e| {
-            e.path().extension().is_some_and(|x| x.eq_ignore_ascii_case("jar"))
+            e.path()
+                .extension()
+                .is_some_and(|x| x.eq_ignore_ascii_case("jar"))
         })
     })
 }
 
 fn instance_name(instance: &Path) -> String {
     let name = file_name(instance);
-    if name.is_empty() { "mods".into() } else { name }
+    if name.is_empty() {
+        "mods".into()
+    } else {
+        name
+    }
 }
 
 fn default_patch_name(instance: &Path) -> PathBuf {
@@ -162,5 +176,8 @@ fn default_patch_name(instance: &Path) -> PathBuf {
 }
 
 fn file_name(p: &Path) -> String {
-    p.file_name().unwrap_or_default().to_string_lossy().into_owned()
+    p.file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned()
 }

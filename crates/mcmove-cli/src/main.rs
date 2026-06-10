@@ -83,13 +83,23 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Command::Pack { action } => match action {
             PackAction::Create { instance, out } => pack::create(&instance, out).await,
-            PackAction::Share { instance, bin, filename } => pack::share(&instance, bin, filename).await,
-            PackAction::Apply { patch, instance, dry_run, keep_extra, yes } => {
-                pack::apply(&patch, &instance, dry_run, keep_extra, yes).await
-            }
+            PackAction::Share {
+                instance,
+                bin,
+                filename,
+            } => pack::share(&instance, bin, filename).await,
+            PackAction::Apply {
+                patch,
+                instance,
+                dry_run,
+                keep_extra,
+                yes,
+            } => pack::apply(&patch, &instance, dry_run, keep_extra, yes).await,
         },
         Command::Sync | Command::Pull | Command::Update | Command::Playerdata | Command::Whois => {
-            anyhow::bail!("not yet ported to Rust — see MIGRATION.md (still available via mcmove.py)");
+            anyhow::bail!(
+                "not yet ported to Rust — see MIGRATION.md (still available via mcmove.py)"
+            );
         }
     }
 }

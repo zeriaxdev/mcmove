@@ -49,7 +49,10 @@ impl Version {
 /// Shared HTTP client with the project User-Agent (Modrinth requires one).
 pub fn client() -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder()
-        .user_agent(format!("mcmove/{} (github.com/zeriaxdev/mcmove)", crate::VERSION))
+        .user_agent(format!(
+            "mcmove/{} (github.com/zeriaxdev/mcmove)",
+            crate::VERSION
+        ))
         .timeout(Duration::from_secs(120))
         .build()?)
 }
