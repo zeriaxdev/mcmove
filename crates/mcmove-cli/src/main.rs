@@ -1,8 +1,7 @@
 //! mcmove CLI — a thin front-end over `mcmove-core`.
 //!
 //! All real work lives in the core crate. This binary only parses args, renders progress,
-//! and prompts on the terminal. Remaining Python-only commands are stubbed during the
-//! migration (see MIGRATION.md) and filled in stage by stage.
+//! and prompts on the terminal.
 
 mod connect;
 mod pack;
@@ -13,6 +12,7 @@ mod synccmd;
 mod update;
 mod util;
 mod whois;
+mod wizard;
 
 use std::path::PathBuf;
 
@@ -37,6 +37,12 @@ enum Command {
     },
     /// Remove a server profile.
     RemoveServer { name: String },
+    /// Run the move wizard: push world / mods / config to a server.
+    Move {
+        /// Path to local instance (skips the prompt).
+        #[arg(long)]
+        src: Option<String>,
+    },
     /// Push: patch a server's /mods to match the local instance.
     Sync {
         /// Saved server name (otherwise you'll be asked).
@@ -169,6 +175,7 @@ async fn main() -> anyhow::Result<()> {
         Command::List => servers::list(),
         Command::AddServer { url } => servers::add(url),
         Command::RemoveServer { name } => servers::remove(&name),
+        Command::Move { src } => wizard::run(src).await,
         Command::Update {
             src,
             channel,

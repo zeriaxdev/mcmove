@@ -10,6 +10,7 @@
 //! - **It never prompts.** Secrets are fetched through a [`Credentials`] callback so a GUI
 //!   can present a native prompt.
 
+pub mod actions;
 pub mod config;
 pub mod modrinth;
 pub mod mojang;

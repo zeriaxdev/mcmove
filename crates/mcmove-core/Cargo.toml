@@ -27,3 +27,4 @@ futures.workspace = true
 chrono.workspace = true
 tempfile.workspace = true
 getrandom.workspace = true
+tar = "0.4"

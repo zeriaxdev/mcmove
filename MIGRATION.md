@@ -62,6 +62,11 @@ Windows friend.
 - **Stage 3 — `mcmove-core` modules, one at a time, each verified live:**
   `modrinth` → `nbt`/playerdata → `sftp` → state manifest → commands
   (`whois`, `update`, `sync`, `pull`, `playerdata`, `move`, server profiles).
+  *(done — all commands ported. Verified: live Mojang/Modrinth round trips, NBT
+  cross-checked with nbtlib, every SFTP primitive + backup_remote against a local
+  OpenSSH sshd (`cargo run -p mcmove-core --example sftp_smoke`), 6 unit tests on
+  plan_sync. Still pending: a first live run against the real Pelican server —
+  `mcmove sync --dry-run` is the safe parity check.)*
 - **Stage 4 — CLI parity.** clap subcommands matching today's UX; colors auto-off on
   non-TTY / `NO_COLOR`.
 - **Stage 5 — Parity check, then flip.** Run Rust vs Python on the same instance/server;

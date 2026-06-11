@@ -45,6 +45,23 @@ pub async fn sync(
     let (name, profile) = crate::servers::select(&cfg, server.as_deref())?;
     let src = resolve_src(&profile.last_src, src)?;
 
+    let sftp = crate::connect::connect(profile).await?;
+    let result = sync_over(&sftp, &name, &src, dry_run).await;
+    sftp.close().await;
+    if result? && !dry_run {
+        remember_src(&name, &src)?;
+    }
+    Ok(())
+}
+
+/// The sync flow over an existing connection — scan, classify, plan, confirm,
+/// apply. Returns whether changes were applied. Reused by the move wizard.
+pub async fn sync_over(
+    sftp: &mcmove_core::sftp::Sftp,
+    name: &str,
+    src: &str,
+    dry_run: bool,
+) -> anyhow::Result<bool> {
     let jars = syncmods::local_jars(Path::new(&src))?;
     if jars.is_empty() {
         bail!("no .jar files in {src}/mods");
@@ -67,10 +84,9 @@ pub async fn sync(
     }
     println!();
 
-    let manifest = syncmods::load_state(&name)?;
-    let sftp = crate::connect::connect(profile).await?;
-    let result = async {
-        let remote_files = syncmods::remote_mod_files(&sftp).await?;
+    let manifest = syncmods::load_state(name)?;
+    {
+        let remote_files = syncmods::remote_mod_files(sftp).await?;
         let (plan, new_managed) = syncmods::plan_sync(&infos, &manifest, &remote_files);
 
         println!("\nPlan:");
@@ -94,7 +110,10 @@ pub async fn sync(
         if !plan.unknown.is_empty() {
             let shown: Vec<&str> = plan.unknown.iter().take(8).map(|s| s.as_str()).collect();
             let more = if plan.unknown.len() > 8 { " ..." } else { "" };
-            println!("  ? kept (couldn't determine side): {}{more}", shown.join(", "));
+            println!(
+                "  ? kept (couldn't determine side): {}{more}",
+                shown.join(", ")
+            );
         }
 
         if plan.is_noop() {
@@ -125,19 +144,13 @@ pub async fn sync(
             return Ok(false);
         }
 
-        syncmods::execute_sync(&sftp, &plan, &reporter).await?;
+        syncmods::execute_sync(sftp, &plan, &reporter).await?;
         let mut manifest = manifest;
         manifest.mods = new_managed;
-        syncmods::save_state(&name, &manifest)?;
+        syncmods::save_state(name, &manifest)?;
         println!("\n✓ Mods patched. Restart the server to load changes.");
-        Ok::<bool, anyhow::Error>(true)
+        Ok(true)
     }
-    .await;
-    sftp.close().await;
-    if result? && !dry_run {
-        remember_src(&name, &src)?;
-    }
-    Ok(())
 }
 
 pub async fn pull(

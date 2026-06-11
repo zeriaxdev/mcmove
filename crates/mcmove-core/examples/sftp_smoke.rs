@@ -78,6 +78,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     println!("✓ upload_dir (recursive)");
 
+    let archive = mcmove_core::actions::backup_remote(
+        &sftp,
+        "smoketest",
+        &[format!("{base}/mcmove-smoke"), format!("{base}/missing")],
+        &NoopReporter,
+    )
+    .await?
+    .expect("backup should produce an archive");
+    assert!(archive.is_file() && archive.extension().is_some_and(|e| e == "gz"));
+    std::fs::remove_file(&archive)?;
+    println!("✓ backup_remote (tar.gz at {})", archive.display());
+
     for d in [format!("{base}/mcmove-smoke"), up_remote] {
         sftp.rm_rf(&d).await?;
         let leftovers = sftp.listdir(&d).await?;
