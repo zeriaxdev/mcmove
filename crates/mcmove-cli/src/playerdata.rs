@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::bail;
 use mcmove_core::{config, modrinth, mojang, nbt, sftp};
 
+use crate::color::{bold, dim, green};
 use crate::util::{ask, clean_path, confirm};
 
 pub struct Args {
@@ -74,18 +75,30 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
         let player = nbt::extract_player(Path::new(lp))?;
         let path = nbt::write_playerdata(&player, &uuid, &out_dir)?;
         println!(
-            "  ✓ {who:20} → {}",
-            path.file_name().unwrap_or_default().to_string_lossy()
+            "{}",
+            green(&format!(
+                "  ✓ {who:20} → {}",
+                path.file_name().unwrap_or_default().to_string_lossy()
+            ))
         );
         results.push((uuid, path));
     }
 
     println!(
-        "\nWrote {} playerdata file(s) to {}",
-        results.len(),
-        out_dir.display()
+        "{}",
+        green(
+            bold(&format!(
+                "\nWrote {} playerdata file(s) to {}",
+                results.len(),
+                out_dir.display()
+            ))
+            .as_str()
+        )
     );
-    println!("  Online-mode (Mojang-auth) servers only — offline-mode UUIDs differ.");
+    println!(
+        "{}",
+        dim("  Online-mode (Mojang-auth) servers only — offline-mode UUIDs differ.")
+    );
 
     let do_upload = args.upload
         || confirm(
@@ -115,7 +128,7 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
                 let _ = conn.rename(&rp, &format!("{rp}.{ts}.bak")).await;
             }
             conn.put(path, &rp).await?;
-            println!("  ↑ {uuid}.dat");
+            println!("{}", green(&format!("  ↑ {uuid}.dat")));
         }
         Ok::<(), anyhow::Error>(())
     }
@@ -123,7 +136,8 @@ pub async fn run(args: Args) -> anyhow::Result<()> {
     conn.close().await;
     result?;
     println!(
-        "\n✓ Uploaded. Restart the server — those players keep their inventory and attributes."
+        "{}",
+        green(bold("\n✓ Uploaded. Restart the server — those players keep their inventory and attributes.").as_str())
     );
     Ok(())
 }

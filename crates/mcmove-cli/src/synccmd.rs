@@ -8,6 +8,7 @@ use anyhow::bail;
 use mcmove_core::syncmods::{self, Side};
 use mcmove_core::{config, modrinth, pack};
 
+use crate::color::{bold, cyan, dim, green, red, yellow};
 use crate::report::CliReporter;
 use crate::util::{ask, clean_path, confirm};
 
@@ -89,39 +90,48 @@ pub async fn sync_over(
         let remote_files = syncmods::remote_mod_files(sftp).await?;
         let (plan, new_managed) = syncmods::plan_sync(&infos, &manifest, &remote_files);
 
-        println!("\nPlan:");
+        println!("{}", bold("\nPlan:"));
         println!(
-            "  add {} · update {} · remove {} · unchanged {} · client skipped {}",
-            plan.add.len(),
-            plan.update.len(),
-            plan.remove.len(),
-            plan.keep,
-            plan.client.len()
+            "  {} · {} · {} · {}",
+            green(&format!("add {}", plan.add.len())),
+            yellow(&format!("update {}", plan.update.len())),
+            red(&format!("remove {}", plan.remove.len())),
+            dim(&format!(
+                "unchanged {} · client skipped {}",
+                plan.keep,
+                plan.client.len()
+            ))
         );
         for i in &plan.add {
-            println!("  + add     {}", i.filename);
+            println!("{}", green(&format!("  + add     {}", i.filename)));
         }
         for i in &plan.update {
-            println!("  ~ update  {}", i.filename);
+            println!("{}", yellow(&format!("  ~ update  {}", i.filename)));
         }
         for f in &plan.remove {
-            println!("  - remove  {f}");
+            println!("{}", red(&format!("  - remove  {f}")));
         }
         if !plan.unknown.is_empty() {
             let shown: Vec<&str> = plan.unknown.iter().take(8).map(|s| s.as_str()).collect();
             let more = if plan.unknown.len() > 8 { " ..." } else { "" };
             println!(
-                "  ? kept (couldn't determine side): {}{more}",
-                shown.join(", ")
+                "{}",
+                dim(&format!(
+                    "  ? kept (couldn't determine side): {}{more}",
+                    shown.join(", ")
+                ))
             );
         }
 
         if plan.is_noop() {
-            println!("\nServer mods already up to date. Nothing to do.");
+            println!(
+                "{}",
+                green("\nServer mods already up to date. Nothing to do.")
+            );
             return Ok(false);
         }
         if dry_run {
-            println!("\n(dry run — no changes made)");
+            println!("{}", cyan("\n(dry run — no changes made)"));
             return Ok(false);
         }
 
@@ -131,9 +141,15 @@ pub async fn sync_over(
         let managed_total = manifest.mods.len().max(1);
         if n_remove >= 15 && n_remove * 2 > managed_total {
             println!(
-                "\n⚠  This would REMOVE {n_remove} mods from the server — more than half of what mcmove manages here."
+                "{}",
+                red(bold(&format!(
+                    "\n⚠  This would REMOVE {n_remove} mods from the server — more than half of what mcmove manages here."
+                )).as_str())
             );
-            println!("   That usually means this isn't the right/complete instance.");
+            println!(
+                "{}",
+                red("   That usually means this isn't the right/complete instance.")
+            );
             if !confirm("   Type y only if you're SURE. Proceed?", false) {
                 println!("aborted");
                 return Ok(false);
@@ -148,7 +164,10 @@ pub async fn sync_over(
         let mut manifest = manifest;
         manifest.mods = new_managed;
         syncmods::save_state(name, &manifest)?;
-        println!("\n✓ Mods patched. Restart the server to load changes.");
+        println!(
+            "{}",
+            green(bold("\n✓ Mods patched. Restart the server to load changes.").as_str())
+        );
         Ok(true)
     }
 }
@@ -248,38 +267,48 @@ pub async fn pull(
             }
         }
 
-        println!("\nPlan (server → local instance):");
+        println!("{}", bold("\nPlan (server → local instance):"));
         let mut line = format!(
-            "  add {} · update {} · unchanged {skip}",
-            add.len(),
-            update.len()
+            "  {} · {} · {}",
+            green(&format!("add {}", add.len())),
+            yellow(&format!("update {}", update.len())),
+            dim(&format!("unchanged {skip}"))
         );
         if mirror {
-            line.push_str(&format!(" · remove {}", remove.len()));
+            line.push_str(&format!(" · {}", red(&format!("remove {}", remove.len()))));
         }
         println!("{line}");
         for (sf, _) in &add {
-            println!("  + add     {sf}");
+            println!("{}", green(&format!("  + add     {sf}")));
         }
         for (sf, old, _) in &update {
             println!(
-                "  ~ update  {}  →  {sf}",
-                old.file_name().unwrap_or_default().to_string_lossy()
+                "{}",
+                yellow(&format!(
+                    "  ~ update  {}  →  {sf}",
+                    old.file_name().unwrap_or_default().to_string_lossy()
+                ))
             );
         }
         for p in &remove {
             println!(
-                "  - remove  {}",
-                p.file_name().unwrap_or_default().to_string_lossy()
+                "{}",
+                red(&format!(
+                    "  - remove  {}",
+                    p.file_name().unwrap_or_default().to_string_lossy()
+                ))
             );
         }
 
         if add.is_empty() && update.is_empty() && remove.is_empty() {
-            println!("\nYour instance already matches the server. Nothing to do.");
+            println!(
+                "{}",
+                green("\nYour instance already matches the server. Nothing to do.")
+            );
             return Ok(false);
         }
         if dry_run {
-            println!("\n(dry run — no changes made)");
+            println!("{}", cyan("\n(dry run — no changes made)"));
             return Ok(false);
         }
         if !confirm("\nApply to your LOCAL instance?", true) {
@@ -289,24 +318,33 @@ pub async fn pull(
 
         for (sf, staged) in &add {
             move_into(staged, &mods_dir.join(sf))?;
-            println!("  + {sf}");
+            println!("{}", green(&format!("  + {sf}")));
         }
         for (sf, old, staged) in &update {
             let _ = fs::remove_file(old);
             move_into(staged, &mods_dir.join(sf))?;
             println!(
-                "  ~ {} → {sf}",
-                old.file_name().unwrap_or_default().to_string_lossy()
+                "{}",
+                yellow(&format!(
+                    "  ~ {} → {sf}",
+                    old.file_name().unwrap_or_default().to_string_lossy()
+                ))
             );
         }
         for p in &remove {
             let _ = fs::remove_file(p);
             println!(
-                "  - {}",
-                p.file_name().unwrap_or_default().to_string_lossy()
+                "{}",
+                red(&format!(
+                    "  - {}",
+                    p.file_name().unwrap_or_default().to_string_lossy()
+                ))
             );
         }
-        println!("\n✓ Local instance patched from the server. Restart your game.");
+        println!(
+            "{}",
+            green(bold("\n✓ Local instance patched from the server. Restart your game.").as_str())
+        );
         Ok::<bool, anyhow::Error>(true)
     }
     .await;

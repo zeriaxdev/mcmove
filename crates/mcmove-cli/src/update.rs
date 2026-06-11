@@ -9,7 +9,20 @@ use mcmove_core::config;
 use mcmove_core::modrinth::{self, Version};
 use mcmove_core::pack::{download_file, sha1_of};
 
+use crate::color::{bold, cyan, dim, green, red, yellow};
 use crate::util::{ask, clean_path, confirm};
+
+/// Colorize a version-type tag like the Python selector: release green, beta
+/// yellow, alpha red.
+fn tag(version_type: &str) -> String {
+    let t = format!("[{version_type}]");
+    match version_type {
+        "release" => green(&t),
+        "beta" => yellow(&t),
+        "alpha" => red(&t),
+        _ => dim(&t),
+    }
+}
 
 struct Candidate {
     path: PathBuf,
@@ -91,11 +104,13 @@ pub async fn run(
     }
 
     println!(
-        "  {uptodate} up to date · {} with updates · {unknown} not on Modrinth",
-        plan.len()
+        "  {} · {} · {}",
+        green(&format!("{uptodate} up to date")),
+        yellow(&format!("{} with updates", plan.len())),
+        dim(&format!("{unknown} not on Modrinth"))
     );
     if plan.is_empty() {
-        println!("\nEverything's current. Nothing to do.");
+        println!("{}", green("\nEverything's current. Nothing to do."));
         return Ok(());
     }
 
@@ -106,22 +121,31 @@ pub async fn run(
             chosen.push(m);
         }
     } else {
-        println!("\nFor each mod:  Enter = latest · number = pick a version · s = skip\n");
+        println!(
+            "{}",
+            dim("\nFor each mod:  Enter = latest · number = pick a version · s = skip\n")
+        );
         for mut m in plan {
             let opts = &m.newer[..m.newer.len().min(12)];
             println!(
-                "{}   (current {} [{}])",
-                m.path.file_name().unwrap_or_default().to_string_lossy(),
-                m.current.version_number,
-                m.current.version_type
+                "{}{}",
+                yellow(&m.path.file_name().unwrap_or_default().to_string_lossy()),
+                dim(&format!(
+                    "   (current {} [{}])",
+                    m.current.version_number, m.current.version_type
+                ))
             );
             for (i, x) in opts.iter().enumerate() {
-                let mark = if i == 0 { "  (latest)" } else { "" };
+                let mark = if i == 0 {
+                    dim("  (latest)")
+                } else {
+                    String::new()
+                };
                 println!(
-                    "   {}) {:24} [{}] {}{mark}",
+                    "   {}) {:24} {} {}{mark}",
                     i + 1,
                     x.version_number,
-                    x.version_type,
+                    tag(&x.version_type),
                     x.date_published.get(..10).unwrap_or(""),
                 );
             }
@@ -144,19 +168,22 @@ pub async fn run(
         return Ok(());
     }
 
-    println!("\nPlan:");
+    println!("{}", bold("\nPlan:"));
     for m in &chosen {
         let pick = m.pick.as_ref().unwrap();
         println!(
-            "  ~ {}  {}  →  {} [{}]",
-            m.path.file_name().unwrap_or_default().to_string_lossy(),
-            m.current.version_number,
-            pick.version_number,
-            pick.version_type
+            "  {}{}  →  {} {}",
+            yellow(&format!(
+                "~ {}",
+                m.path.file_name().unwrap_or_default().to_string_lossy()
+            )),
+            dim(&format!("  {}", m.current.version_number)),
+            green(&pick.version_number),
+            tag(&pick.version_type)
         );
     }
     if dry_run {
-        println!("\n(dry run — no changes made)");
+        println!("{}", cyan("\n(dry run — no changes made)"));
         return Ok(());
     }
     if !confirm("\nDownload and apply these to the local instance?", true) {
@@ -189,8 +216,12 @@ pub async fn run(
         if old_name != f.filename.as_str() {
             let _ = fs::remove_file(&m.path);
         }
-        println!("  ↑ {old_name} → {}", f.filename);
+        println!("{}", green(&format!("  ↑ {old_name} → {}", f.filename)));
     }
-    println!("\n✓ Local instance updated.  Run `mcmove sync` to push the changes to the server.");
+    println!(
+        "{}{}",
+        green(bold("\n✓ Local instance updated.").as_str()),
+        dim("  Run `mcmove sync` to push the changes to the server.")
+    );
     Ok(())
 }

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::bail;
 use mcmove_core::{actions, config};
 
+use crate::color::{bold, dim, green};
 use crate::report::CliReporter;
 use crate::util::{ask, clean_path, confirm};
 
@@ -188,10 +189,19 @@ pub async fn run(src_arg: Option<String>) -> anyhow::Result<()> {
         config::save(&cfg)?;
     }
 
-    println!("\n✓ Done. Restart the server in the panel to load the changes.");
+    println!(
+        "{}",
+        green(bold("\n✓ Done. Restart the server in the panel to load the changes.").as_str())
+    );
     if do_world {
-        println!("  Note: if this was a single-player world on vanilla, dimensions are nested");
-        println!("  inside the world folder — that's fine for modded/Forge/NeoForge servers.");
+        println!(
+            "{}",
+            dim("  Note: if this was a single-player world on vanilla, dimensions are nested")
+        );
+        println!(
+            "{}",
+            dim("  inside the world folder — that's fine for modded/Forge/NeoForge servers.")
+        );
     }
     Ok(())
 }

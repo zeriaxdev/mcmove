@@ -9,6 +9,7 @@ use anyhow::{bail, Context};
 use mcmove_core::modrinth;
 use mcmove_core::pack::{self, ModEntry, Plan};
 
+use crate::color::{bold, green, red, yellow};
 use crate::report::CliReporter;
 
 pub async fn create(instance: &Path, out: Option<PathBuf>) -> anyhow::Result<()> {
@@ -109,7 +110,10 @@ pub async fn apply(
         return Ok(());
     }
     pack::execute_plan(&mut archive, &plan, &mods_dir, &client, &reporter).await?;
-    println!("\nDone. Restart Minecraft so the new mod set loads.");
+    println!(
+        "{}",
+        green(bold("\nDone. Restart Minecraft so the new mod set loads.").as_str())
+    );
     Ok(())
 }
 
@@ -117,13 +121,16 @@ fn print_plan(plan: &Plan, keep_extra: bool) {
     println!("\n--- current/mods");
     println!("+++ patch/mods");
     for e in &plan.add {
-        println!("+ {} [{}]", e.filename, e.source);
+        println!("{}", green(&format!("+ {} [{}]", e.filename, e.source)));
     }
     for (old, new) in &plan.update {
-        println!("~ {} -> {}", old.filename, new.filename);
+        println!(
+            "{}",
+            yellow(&format!("~ {} -> {}", old.filename, new.filename))
+        );
     }
     for e in &plan.remove {
-        println!("- {}", e.filename);
+        println!("{}", red(&format!("- {}", e.filename)));
     }
     if keep_extra {
         println!("# extra local mods will be kept");

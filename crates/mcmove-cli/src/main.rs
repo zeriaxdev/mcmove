@@ -3,6 +3,7 @@
 //! All real work lives in the core crate. This binary only parses args, renders progress,
 //! and prompts on the terminal.
 
+mod color;
 mod connect;
 mod pack;
 mod playerdata;

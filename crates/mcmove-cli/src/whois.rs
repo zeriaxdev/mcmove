@@ -7,6 +7,7 @@ use std::path::Path;
 use anyhow::bail;
 use mcmove_core::{config, modrinth, mojang};
 
+use crate::color::{bold, dim};
 use crate::util::{ask, clean_path};
 
 pub async fn run(
@@ -57,11 +58,11 @@ pub async fn run(
     }
 
     let client = modrinth::client()?;
-    println!("  {:<18} UUID", "USERNAME");
+    println!("{}", bold(&format!("  {:<18} UUID", "USERNAME")));
     for u in &seen {
         match mojang::uuid_to_name(&client, u).await {
             Some(name) => println!("  {name:<18} {u}"),
-            None => println!("  {:<18} {u}", "(unknown)"),
+            None => println!("  {:<18} {u}", dim("(unknown)")),
         }
     }
     Ok(())
