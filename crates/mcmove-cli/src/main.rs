@@ -23,7 +23,7 @@ use clap::{Parser, Subcommand};
 #[command(name = "mcmove", version = mcmove_core::VERSION, about = "Move Minecraft mods, worlds, configs, and saves between local instances and servers.")]
 struct Cli {
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -172,7 +172,12 @@ enum PackAction {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    match cli.command {
+    // Bare `mcmove` (no subcommand) runs the move wizard, matching mcmove.py.
+    let Some(command) = cli.command else {
+        return wizard::run(None).await;
+    };
+
+    match command {
         Command::List => servers::list(),
         Command::AddServer { url } => servers::add(url),
         Command::RemoveServer { name } => servers::remove(&name),
