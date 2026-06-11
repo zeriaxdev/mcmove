@@ -467,6 +467,12 @@ pub async fn resolve_patch_source(
     reporter.report(Progress::Info {
         message: format!("Downloading patch: {url}"),
     });
+    // Filebin gates downloads: the first GET returns an HTML page and sets a
+    // `verified` cookie; only a follow-up request carrying that cookie 302s to the
+    // real file. The client's cookie store captures it, so we prime once then fetch.
+    if url.contains("filebin.net") {
+        let _ = client.get(&url).send().await;
+    }
     let tmp = tempfile::tempdir()?;
     let dest = tmp.path().join(DEFAULT_REMOTE_NAME);
     download_file(client, &url, &dest).await?;

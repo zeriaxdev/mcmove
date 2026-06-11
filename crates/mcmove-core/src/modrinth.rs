@@ -64,6 +64,8 @@ pub fn channel_allows(channel: &str, version_type: &str) -> bool {
 }
 
 /// Shared HTTP client with the project User-Agent (Modrinth requires one).
+/// The cookie store lets Filebin downloads pass its `verified` cookie gate
+/// (see `pack::resolve_patch_source`); it's harmless for Modrinth.
 pub fn client() -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder()
         .user_agent(format!(
@@ -71,6 +73,7 @@ pub fn client() -> Result<reqwest::Client> {
             crate::VERSION
         ))
         .timeout(Duration::from_secs(120))
+        .cookie_store(true)
         .build()?)
 }
 
